@@ -68,7 +68,7 @@ public class SmsReceiver extends BroadcastReceiver {
     // factor them out or, even better, improve the API for starting
     // services under wake locks.
 
-    //开启service来处理当前的事件通知，在开启之前先启动唤醒锁
+    //开启service来处理当前的事件通知，在开启之前先启动唤醒锁 
     /**
      * Start the service to process the current event notifications, acquiring
      * the wake lock before returning to ensure that the service will run.
