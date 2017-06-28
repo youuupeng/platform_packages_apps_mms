@@ -121,7 +121,7 @@ public class SmsReceiverService extends Service {
         HandlerThread thread = new HandlerThread(TAG, Process.THREAD_PRIORITY_BACKGROUND);
         thread.start();
 
-        mServiceLooper = thread.getLooper();
+        mServiceLooper = thread.getLooper(); 
         mServiceHandler = new ServiceHandler(mServiceLooper);
     }
 
