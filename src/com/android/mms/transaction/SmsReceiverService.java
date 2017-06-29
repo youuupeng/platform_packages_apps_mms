@@ -117,10 +117,11 @@ public class SmsReceiverService extends Service {
         // Start up the thread running the service.  Note that we create a
         // separate thread because the service normally runs in the process's
         // main thread, which we don't want to block.
+        //由于service是在主线程中，所以这里单独开启一个优先级较低的子线程
         HandlerThread thread = new HandlerThread(TAG, Process.THREAD_PRIORITY_BACKGROUND);
         thread.start();
 
-        mServiceLooper = thread.getLooper();
+        mServiceLooper = thread.getLooper(); 
         mServiceHandler = new ServiceHandler(mServiceLooper);
     }
 
@@ -149,6 +150,7 @@ public class SmsReceiverService extends Service {
         return Service.START_NOT_STICKY;
     }
 
+    //发送短信的状态回执码，除了Activity.RESULT_OK是发送成功之外，其他几种都是失败的情况
     private static String translateResultCode(int resultCode) {
         switch (resultCode) {
             case Activity.RESULT_OK:
@@ -231,6 +233,7 @@ public class SmsReceiverService extends Service {
 
     private void handleServiceStateChanged(Intent intent) {
         // If service just returned, start sending out the queued messages
+        //如果服务恢复正常了，就开始发送待发送列表的短信
         ServiceState serviceState = ServiceState.newFromBundle(intent.getExtras());
         if (serviceState.getState() == ServiceState.STATE_IN_SERVICE) {
             sendFirstQueuedMessage();
@@ -243,12 +246,16 @@ public class SmsReceiverService extends Service {
         }
     }
 
+    //Inactive类型短信包括所有发件箱的短信和待发送的短信
     private void handleSendInactiveMessage() {
         // Inactive messages includes all messages in outbox and queued box.
         moveOutboxMessagesToQueuedBox();
         sendFirstQueuedMessage();
     }
 
+    /*发送队列中的第一条的短信：
+     *按日期升序取出第一条，即取出最早的一条短信
+     */
     public synchronized void sendFirstQueuedMessage() {
         boolean success = true;
         // get all the queued messages from the database
@@ -309,6 +316,11 @@ public class SmsReceiverService extends Service {
         }
     }
 
+    /* 处理发送出去的短信：
+     * 1.发送成功，如果还有短信，则继续发送
+     * 2.由于手机没有服务导致发送失败，则移至待发送列表，监听服务状态，状态恢复，则继续发送
+     * 3.其他发送失败的情况，移至文件夹
+     */
     private void handleSmsSent(Intent intent, int error) {
         Uri uri = intent.getData();
         mSending = false;
@@ -366,6 +378,7 @@ public class SmsReceiverService extends Service {
         }
     }
 
+    //将发送失败的短信存到文件夹
     private void messageFailedToSend(Uri uri, int error) {
         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE) || LogTag.DEBUG_SEND) {
             Log.v(TAG, "messageFailedToSend msg failed uri: " + uri + " error: " + error);
@@ -374,6 +387,7 @@ public class SmsReceiverService extends Service {
         MessagingNotification.notifySendFailed(getApplicationContext(), true);
     }
 
+    //处理接收到短信：将短信保存到ContentProvider，通知栏显示
     private void handleSmsReceived(Intent intent, int error) {
         SmsMessage[] msgs = Intents.getMessagesFromIntent(intent);
         String format = intent.getStringExtra("format");
@@ -399,6 +413,8 @@ public class SmsReceiverService extends Service {
         // Some messages may get stuck in the outbox. At this point, they're probably irrelevant
         // to the user, so mark them as failed and notify the user, who can then decide whether to
         // resend them manually.
+        //发件箱中的短信由于SmsManager.RESULT_ERROR_GENERIC_FAILURE发送失败，再重启应用之后
+        //将它标记成失败状态并且通知用户，用户可以决定是否手动重新发送
         int numMoved = moveOutboxMessagesToFailedBox();
         if (numMoved > 0) {
             MessagingNotification.notifySendFailed(getApplicationContext(), true);
@@ -407,6 +423,7 @@ public class SmsReceiverService extends Service {
         // Send any queued messages that were waiting from before the reboot.
         sendFirstQueuedMessage();
 
+        //Q7:下面这个方法的作用？
         // Called off of the UI thread so ok to block.
         MessagingNotification.blockingUpdateNewMessageIndicator(
                 this, MessagingNotification.THREAD_ALL, false);
@@ -416,6 +433,7 @@ public class SmsReceiverService extends Service {
      * Move all messages that are in the outbox to the queued state
      * @return The number of messages that were actually moved
      */
+    //将所有发件箱的短信设置成待发送状态
     private int moveOutboxMessagesToQueuedBox() {
         ContentValues values = new ContentValues(1);
 
@@ -434,6 +452,7 @@ public class SmsReceiverService extends Service {
      * Move all messages that are in the outbox to the failed state and set them to unread.
      * @return The number of messages that were actually moved
      */
+    //将发件箱的短信移至发送失败状态并且设置成未读状态，该方法返回移动的短信条数
     private int moveOutboxMessagesToFailedBox() {
         ContentValues values = new ContentValues(3);
 
@@ -469,6 +488,8 @@ public class SmsReceiverService extends Service {
      * <code>Uri</code> of the thread containing this message
      * so that we can use it for notification.
      */
+    //如果是class0短信，马上显示并且返回null。否则，通过ContentResolver存储并且返回包含该消息的线程Uri用于通知显示
+    //Q1:class0短信是啥？
     private Uri insertMessage(Context context, SmsMessage[] msgs, int error, String format) {
         // Build the helper classes to parse the messages.
         SmsMessage sms = msgs[0];
@@ -492,6 +513,11 @@ public class SmsReceiverService extends Service {
      *
      * See TS 23.040 9.2.3.9.
      */
+    /**
+     * 这个方法是用于处理“replace short message”短信，
+     * 如果即将到来的短信的号码跟协议标识符之前已经收到过，就将用新的短信的字段替代旧短信。
+     * 否则，就保存该短信
+     */
     private Uri replaceMessage(Context context, SmsMessage[] msgs, int error) {
         SmsMessage sms = msgs[0];
         ContentValues values = extractContentValues(sms);
@@ -503,6 +529,7 @@ public class SmsReceiverService extends Service {
             values.put(Inbox.BODY, replaceFormFeeds(sms.getDisplayMessageBody()));
         } else {
             // Build up the body from the parts.
+            // 这边是通过StringBuilder来将长短信拼接起来
             StringBuilder body = new StringBuilder();
             for (int i = 0; i < pduCount; i++) {
                 sms = msgs[i];
@@ -544,6 +571,8 @@ public class SmsReceiverService extends Service {
         return storeMessage(context, msgs, error);
     }
 
+    //处理短信文本中\f字符
+    //Q6：\f字符是因为被某些运营商处理过才有的？
     public static String replaceFormFeeds(String s) {
         // Some providers send formfeeds in their messages. Convert those formfeeds to newlines.
         return s == null ? "" : s.replace('\f', '\n');
@@ -551,6 +580,7 @@ public class SmsReceiverService extends Service {
 
 //    private static int count = 0;
 
+    //储存短信，需要特殊处理的是短信的内容，号码，threadId,以及短信的容量
     private Uri storeMessage(Context context, SmsMessage[] msgs, int error) {
         SmsMessage sms = msgs[0];
 
@@ -592,6 +622,7 @@ public class SmsReceiverService extends Service {
 //            case 7: address = "#4#5#6#"; break;
 //        }
 
+        //判断号码是否为空，为空则显示未知发送人号码；否则判断是否是联系人号码
         if (!TextUtils.isEmpty(address)) {
             Contact cacheContact = Contact.get(address,true);
             if (cacheContact != null) {
@@ -602,6 +633,7 @@ public class SmsReceiverService extends Service {
             values.put(Sms.ADDRESS, address);
         }
 
+        //如果threadId为空，说明之前没收到过这个人的短信，这边要给他创建一个threadId
         if (((threadId == null) || (threadId == 0)) && (address != null)) {
             threadId = Conversation.getOrCreateThreadId(context, address);
             values.put(Sms.THREAD_ID, threadId);
@@ -612,6 +644,7 @@ public class SmsReceiverService extends Service {
         Uri insertedUri = SqliteWrapper.insert(context, resolver, Inbox.CONTENT_URI, values);
 
         // Now make sure we're not over the limit in stored messages
+        //Q3:存储短信的容量机制？容量上限？
         Recycler.getSmsRecycler().deleteOldMessagesByThreadId(context, threadId);
         MmsWidgetProvider.notifyDatasetChanged(context);
 
@@ -621,13 +654,17 @@ public class SmsReceiverService extends Service {
     /**
      * Extract all the content values except the body from an SMS
      * message.
+     * 提取除了短信内容之外的字段存储到ContentProvider
+     * Q4:为什么存储到ContentProvider
      */
     private ContentValues extractContentValues(SmsMessage sms) {
         // Store the message in the content provider.
+        
         ContentValues values = new ContentValues();
 
         values.put(Inbox.ADDRESS, sms.getDisplayOriginatingAddress());
 
+        // 校准短信时间
         // Use now for the timestamp to avoid confusion with clock
         // drift between the handset and the SMSC.
         // Check to make sure the system is giving us a non-bogus time.
@@ -660,7 +697,7 @@ public class SmsReceiverService extends Service {
      * Displays a class-zero message immediately in a pop-up window
      * with the number from where it received the Notification with
      * the body of the message
-     *
+     * 马上在popWindow通知栏中显示class0短信内容
      */
     private void displayClassZeroMessage(Context context, SmsMessage sms, String format) {
         // Using NEW_TASK here is necessary because we're calling
@@ -674,12 +711,14 @@ public class SmsReceiverService extends Service {
         context.startActivity(smsDialogIntent);
     }
 
+    //注册监听手机网络状态
     private void registerForServiceStateChanges() {
         Context context = getApplicationContext();
         unRegisterForServiceStateChanges();
 
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(TelephonyIntents.ACTION_SERVICE_STATE_CHANGED);
+        //http://www.cnblogs.com/bastard/archive/2013/04/20/3031964.html
         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE) || LogTag.DEBUG_SEND) {
             Log.v(TAG, "registerForServiceStateChanges");
         }

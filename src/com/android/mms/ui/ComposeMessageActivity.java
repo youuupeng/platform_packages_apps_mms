@@ -1718,18 +1718,21 @@ public class ComposeMessageActivity extends Activity
 
     private static ContactList sEmptyContactList;
 
+    //获取联系人列表
     private ContactList getRecipients() {
         // If the recipients editor is visible, the conversation has
         // not really officially 'started' yet.  Recipients will be set
         // on the conversation once it has been saved or sent.  In the
         // meantime, let anyone who needs the recipient list think it
         // is empty rather than giving them a stale one.
+        //如果编辑联系人可见，说明这是新编辑的短信并且没有给任何人发过。这个时候应该返回空的接受者列表
         if (isRecipientsEditorVisible()) {
             if (sEmptyContactList == null) {
                 sEmptyContactList = new ContactList();
             }
             return sEmptyContactList;
         }
+            //返回当前会话的接收者
         return mConversation.getRecipients();
     }
 
@@ -3698,6 +3701,10 @@ public class ComposeMessageActivity extends Activity
         }
     }
 
+    //判断是否能够发送该短信的条件：
+    //1.接受者的数目0<count<Integer.MAX_VALUE；
+    //2.是默认短信app
+    //3.短信不为空或者附件不为空            
     private boolean isPreparedForSending() {
         int recipientCount = recipientCount();
 
@@ -3726,6 +3733,7 @@ public class ComposeMessageActivity extends Activity
     private void sendMessage(boolean bCheckEcmMode) {
         if (bCheckEcmMode) {
             // TODO: expose this in telephony layer for SDK build
+                //判断是否是紧急拨打模式
             String inEcm = SystemProperties.get(TelephonyProperties.PROPERTY_INECM_MODE);
             if (Boolean.parseBoolean(inEcm)) {
                 try {
@@ -3758,6 +3766,7 @@ public class ComposeMessageActivity extends Activity
 
             // send can change the recipients. Make sure we remove the listeners first and then add
             // them back once the recipient list has settled.
+            //每次发送短信可能更改联系人，因此这边先取消监听，发送之后再监听
             removeRecipientsListeners();
 
             mWorkingMessage.send(mDebugRecipients);

@@ -73,6 +73,7 @@ public class SmsMessageSender implements MessageSender {
     public boolean sendMessage(long token) throws MmsException {
         // In order to send the message one by one, instead of sending now, the message will split,
         // and be put into the queue along with each destinations
+        //为了一条一条的发送短信，会先将短信放到待发送列表，然后再各自发送个各联系人
         return queueMessage(token);
     }
 
@@ -92,6 +93,7 @@ public class SmsMessageSender implements MessageSender {
                 if (LogTag.DEBUG_SEND) {
                     Log.v(TAG, "queueMessage mDests[i]: " + mDests[i] + " mThreadId: " + mThreadId);
                 }
+                //将短信存到待发送列表
                 Sms.addMessageToUri(mContext.getContentResolver(),
                         Uri.parse("content://sms/queued"), mDests[i],
                         mMessageText, null, mTimestamp,

@@ -78,6 +78,7 @@ import com.google.android.mms.pdu.SendReq;
 
 /**
  * Contains all state related to a message being edited by the user.
+ * 只要打开了一个编辑界面就创建了一个WorkingMessage，包含了用户编辑的所有状态。
  */
 public class WorkingMessage {
     private static final String TAG = LogTag.TAG;
@@ -1173,6 +1174,9 @@ public class WorkingMessage {
      * @throws ContentRestrictionException if sending an MMS and uaProfUrl is not defined
      * in mms_config.xml.
      */
+    /** 通过网络发送短信，一旦分发到telephony栈就会调用onMessageSent()方法回调。
+    *   这个方法被调用后，WorkingMessage对象就不再有用了。
+    */
     public void send(final String recipientsInUI) {
         long origThreadId = mConversation.getThreadId();
 
@@ -1183,6 +1187,7 @@ public class WorkingMessage {
         removeSubjectIfEmpty(true /* notify */);
 
         // Get ready to write to disk.
+        //将WorkingMessage的接收者保存到联系人，保存彩信
         prepareForSave(true /* notify */);
 
         // We need the recipient list for both SMS and MMS.
